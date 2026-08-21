@@ -1,0 +1,13 @@
+[Unit]
+Description=Wez AI Sidebar state daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=@BINARY@ daemon
+Restart=on-failure
+RestartSec=2
+Environment=RUST_LOG=wez_ai_sidebar=info
+
+[Install]
+WantedBy=default.target
