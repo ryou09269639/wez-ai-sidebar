@@ -175,7 +175,7 @@ Set `unicode = false` for terminals without reliable Unicode glyph support. Colo
 |---|---|---:|---|
 | Claude Code | `PermissionRequest`, `Notification`, lifecycle hooks | Structured | TTY process/title |
 | OpenCode | plugin `permission.asked`, `session.status`, `session.idle` | Structured | TTY process/title |
-| OpenAI Codex CLI | `PermissionRequest` and lifecycle hooks | Structured | Linux TTY process/title |
+| OpenAI Codex CLI | `PermissionRequest` and lifecycle hooks | Structured | TTY process/title |
 | GitHub Copilot CLI | `notification: permission_prompt`, lifecycle hooks | Structured | TTY process/title |
 | Google Antigravity CLI | passive `PostInvocation`/`Stop` hooks | Terminal-tail fallback | TTY process/title |
 | Kimi Code CLI | `Notification: permission_prompt`, lifecycle hooks | Structured | TTY process/title |
@@ -215,7 +215,7 @@ WezTerm has no window-global fixed sidebar. The Lua module therefore creates a t
 
 WezTerm does not expose a general “any tab was created” Lua event. The module handles the default new-tab key and new-tab button immediately, then uses `update-status` to lazily cover tabs created through other paths. This is typically visible within one status interval.
 
-On Linux, `wezterm cli list --format json` provides each pane's TTY. The daemon maps that TTY to exact executable names in `/proc`, so Codex is found even when its pane title remains `zsh`; prompt text and unrelated command arguments are never used as process evidence. Structured hooks inherit `WEZTERM_PANE` and remain the authoritative source for permission states.
+`wezterm cli list --format json` provides each pane's TTY. The daemon maps that TTY to exact executable names — via `/proc` on Linux, via `ps -axo pid=,tty=,args=` on macOS — so Codex is found even when its pane title remains `zsh`; prompt text and unrelated command arguments are never used as process evidence. Structured hooks inherit `WEZTERM_PANE` and remain the authoritative source for permission states.
 
 Closing a pane removes all agents mapped to it on the next refresh. Process-discovered agents are also removed when their process exits, and structured `SessionEnd` events remove the corresponding session immediately. Remaining agents are ordered with permission/input waits first, then working and idle sessions; terminal error/done states stay at the bottom.
 
