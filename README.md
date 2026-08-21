@@ -173,12 +173,12 @@ Set `unicode = false` for terminals without reliable Unicode glyph support. Colo
 
 | Agent | Primary signal | Permission accuracy | Fallback |
 |---|---|---:|---|
-| Claude Code | `PermissionRequest`, `Notification`, lifecycle hooks | Structured | Process/title |
-| OpenCode | plugin `permission.asked`, `session.status`, `session.idle` | Structured | Process/title |
-| OpenAI Codex CLI | `PermissionRequest` and lifecycle hooks | Structured | Process/title |
-| GitHub Copilot CLI | `notification: permission_prompt`, lifecycle hooks | Structured | Process/title |
-| Google Antigravity CLI | passive `PostInvocation`/`Stop` hooks | Terminal-tail fallback | Process/title |
-| Kimi Code CLI | `Notification: permission_prompt`, lifecycle hooks | Structured | Process/title |
+| Claude Code | `PermissionRequest`, `Notification`, lifecycle hooks | Structured | TTY process/title |
+| OpenCode | plugin `permission.asked`, `session.status`, `session.idle` | Structured | TTY process/title |
+| OpenAI Codex CLI | `PermissionRequest` and lifecycle hooks | Structured | Linux TTY process/title |
+| GitHub Copilot CLI | `notification: permission_prompt`, lifecycle hooks | Structured | TTY process/title |
+| Google Antigravity CLI | passive `PostInvocation`/`Stop` hooks | Terminal-tail fallback | TTY process/title |
+| Kimi Code CLI | `Notification: permission_prompt`, lifecycle hooks | Structured | TTY process/title |
 
 For Kimi, `wez-ai-sidebar install` appends a marked hook block to `~/.kimi/config.toml` after validating the existing TOML and writing a timestamped backup. Restart Kimi after installation and use Kimi's `/hooks` command to verify the integration. Kimi currently labels its hook API as beta, so releases should keep the parser fixtures aligned with the official schema.
 
@@ -196,7 +196,7 @@ Antigravity passive hooks ──┘                          │
                                                       v
                                       Unix socket / spool inbox
                                                       │
-WezTerm pane discovery + bounded tail fallback ───────┤
+WezTerm pane/TTY process discovery + bounded tail ───┤
                                                       v
                                          metadata-only StateStore
                                                       │
@@ -215,7 +215,9 @@ WezTerm has no window-global fixed sidebar. The Lua module therefore creates a t
 
 WezTerm does not expose a general “any tab was created” Lua event. The module handles the default new-tab key and new-tab button immediately, then uses `update-status` to lazily cover tabs created through other paths. This is typically visible within one status interval.
 
-`wezterm cli list --format json` exposes window/tab/pane IDs, title, and cwd, but not a pane PID. Structured hooks inherit `WEZTERM_PANE`, so they provide the authoritative mapping; PID is advisory metadata from the hook process parent.
+On Linux, `wezterm cli list --format json` provides each pane's TTY. The daemon maps that TTY to exact executable names in `/proc`, so Codex is found even when its pane title remains `zsh`; prompt text and unrelated command arguments are never used as process evidence. Structured hooks inherit `WEZTERM_PANE` and remain the authoritative source for permission states.
+
+Closing a pane removes all agents mapped to it on the next refresh. Process-discovered agents are also removed when their process exits, and structured `SessionEnd` events remove the corresponding session immediately. Remaining agents are ordered with permission/input waits first, then working and idle sessions; terminal error/done states stay at the bottom.
 
 ## Desktop notifications
 

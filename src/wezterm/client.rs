@@ -87,11 +87,12 @@ mod tests {
     #[test]
     fn parses_official_list_schema() {
         let panes: Vec<WeztermPane> = serde_json::from_str(
-            r#"[{"window_id":0,"tab_id":4,"pane_id":12,"workspace":"default","size":{"rows":24,"cols":80},"title":"claude","cwd":"file://host/home/user/project"}]"#,
+            r#"[{"window_id":0,"tab_id":4,"pane_id":12,"workspace":"default","size":{"rows":24,"cols":80},"title":"claude","cwd":"file://host/home/user/project","tty_name":"/dev/pts/7"}]"#,
         )
         .unwrap();
         assert_eq!(panes[0].pane_id, 12);
         assert_eq!(panes[0].tab_id, 4);
         assert_eq!(panes[0].cwd_path(), "/home/user/project");
+        assert_eq!(panes[0].tty_name.as_deref(), Some("/dev/pts/7"));
     }
 }
