@@ -64,6 +64,7 @@ enum AgentArg {
     Codex,
     Copilot,
     Antigravity,
+    Kimi,
 }
 
 impl From<AgentArg> for AgentKind {
@@ -74,6 +75,7 @@ impl From<AgentArg> for AgentKind {
             AgentArg::Codex => Self::Codex,
             AgentArg::Copilot => Self::Copilot,
             AgentArg::Antigravity => Self::Antigravity,
+            AgentArg::Kimi => Self::Kimi,
         }
     }
 }
@@ -168,7 +170,7 @@ async fn receive_hook(kind: AgentKind, event_name: Option<String>) -> Result<()>
     }
     if kind == AgentKind::Antigravity && event_name.as_deref() == Some("Stop") {
         println!(r#"{{"decision":"stop"}}"#);
-    } else {
+    } else if kind != AgentKind::Kimi {
         println!("{{}}");
     }
     Ok(())

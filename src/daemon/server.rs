@@ -285,6 +285,12 @@ fn kind_from_title(title: &str) -> Option<AgentKind> {
         Some(AgentKind::Copilot)
     } else if title.contains("antigravity") || title == "agy" || title.starts_with("agy ") {
         Some(AgentKind::Antigravity)
+    } else if title == "kimi"
+        || title.starts_with("kimi ")
+        || title.contains("kimi code")
+        || title.contains("kimi-cli")
+    {
+        Some(AgentKind::Kimi)
     } else {
         None
     }
@@ -311,5 +317,6 @@ mod tests {
         assert_eq!(kind_from_title("wez-ai-sidebar"), None);
         assert_eq!(kind_from_title("Claude Code"), Some(AgentKind::Claude));
         assert_eq!(kind_from_title("agy"), Some(AgentKind::Antigravity));
+        assert_eq!(kind_from_title("Kimi Code CLI"), Some(AgentKind::Kimi));
     }
 }
