@@ -1,5 +1,7 @@
 # wez-ai-sidebar
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 `wez-ai-sidebar` is a WezTerm-native monitor for interactive AI coding agents. Agents keep running in ordinary WezTerm panes; the project does not insert tmux, Herdr, or another terminal multiplexer between WezTerm and the agent.
 
 ```text
@@ -46,14 +48,21 @@ No code path approves an agent request. A permission item only takes the user to
 
 ## Install
 
-From this checkout:
+Install the current GitHub version:
+
+```bash
+cargo install --git https://github.com/ryou09269639/wez-ai-sidebar
+wez-ai-sidebar install
+```
+
+For development from a local checkout:
 
 ```bash
 cargo install --path .
 wez-ai-sidebar install
 ```
 
-After publication, the intended installation is:
+After a future crates.io publication, installation will be:
 
 ```bash
 cargo install wez-ai-sidebar
