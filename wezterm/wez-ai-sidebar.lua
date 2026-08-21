@@ -109,6 +109,11 @@ local function toggle(window, pane)
   if sidebar then
     disabled_tabs[id] = true
     known_tabs[id] = true
+    -- CloseCurrentPane's "current pane" is not reliably the pane passed as the
+    -- perform_action argument when it differs from the truly focused pane
+    -- (undocumented behavior). Without activating it first, toggling off from
+    -- the main pane can close the main pane instead of the sidebar.
+    sidebar:activate()
     window:perform_action(wezterm.action.CloseCurrentPane({ confirm = false }), sidebar)
   else
     disabled_tabs[id] = nil
