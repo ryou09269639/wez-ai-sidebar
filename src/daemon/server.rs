@@ -202,6 +202,11 @@ async fn discover_process_placeholders(
         state.wezterm.window_id = Some(pane.window_id);
         state.pid = detected.map(|item| item.pid);
         state.source = DetectionSource::Process;
+        // `AgentState::new` defaults to `Unknown`, which `scrape_fallbacks` only
+        // ever leaves once it starts matching a keyword pattern; ordinary "still
+        // working" terminal text never matches one. Idle at least reflects that
+        // a real process was found, instead of showing UNKNOWN forever.
+        state.status = AgentStatus::Idle;
         store.lock().await.upsert(state)?;
     }
     Ok(())
@@ -431,6 +436,7 @@ mod tests {
         assert_eq!(snapshot.len(), 1);
         assert_eq!(snapshot[0].agent, AgentKind::Codex);
         assert_eq!(snapshot[0].pid, Some(4242));
+        assert_eq!(snapshot[0].status, AgentStatus::Idle);
     }
 
     #[tokio::test]
