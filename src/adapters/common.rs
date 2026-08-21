@@ -145,6 +145,7 @@ pub fn message_from(value: &Value) -> Option<String> {
     [
         &["message"][..],
         &["title"][..],
+        &["body"][..],
         &["reason"][..],
         &["tool_input", "description"][..],
         &["properties", "message"][..],

@@ -40,6 +40,7 @@ pub struct AgentConfig {
     pub opencode: bool,
     pub copilot: bool,
     pub antigravity: bool,
+    pub kimi: bool,
 }
 
 impl Default for Config {
@@ -82,6 +83,7 @@ impl Default for AgentConfig {
             opencode: true,
             copilot: true,
             antigravity: true,
+            kimi: true,
         }
     }
 }
@@ -94,6 +96,7 @@ impl AgentConfig {
             AgentKind::OpenCode => self.opencode,
             AgentKind::Copilot => self.copilot,
             AgentKind::Antigravity => self.antigravity,
+            AgentKind::Kimi => self.kimi,
             _ => true,
         }
     }

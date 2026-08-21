@@ -1,5 +1,7 @@
 use wez_ai_sidebar::{
-    adapters::{AgentAdapter, ClaudeAdapter, CodexAdapter, CopilotAdapter, OpenCodeAdapter},
+    adapters::{
+        AgentAdapter, ClaudeAdapter, CodexAdapter, CopilotAdapter, KimiAdapter, OpenCodeAdapter,
+    },
     state::{AgentStatus, PermissionType},
 };
 
@@ -31,4 +33,35 @@ fn copilot_notification_distinguishes_human_input() {
     let event = r#"{"sessionId":"s1","cwd":"/tmp/project","hook_event_name":"Notification","notification_type":"elicitation_dialog","message":"Choose a target"}"#;
     let state = CopilotAdapter.parse_event(event).unwrap();
     assert_eq!(state.status, AgentStatus::WaitingInput);
+}
+
+#[test]
+fn kimi_permission_notification_requires_human_attention() {
+    let event = r#"{"session_id":"s1","cwd":"/tmp/project","hook_event_name":"Notification","sink":"llm","notification_type":"permission_prompt","title":"Approval required","body":"Allow Shell?","severity":"info"}"#;
+    let state = KimiAdapter.parse_event(event).unwrap();
+    assert_eq!(state.status, AgentStatus::PermissionRequired);
+    assert_eq!(state.permission, Some(PermissionType::Other));
+    assert_eq!(state.message.as_deref(), Some("Approval required"));
+}
+
+#[test]
+fn kimi_lifecycle_events_transition_to_working_and_done() {
+    let working = KimiAdapter
+        .parse_event(
+            r#"{"session_id":"s1","cwd":"/tmp/project","hook_event_name":"PreToolUse","tool_name":"Shell"}"#,
+        )
+        .unwrap();
+    let done = KimiAdapter
+        .parse_event(
+            r#"{"session_id":"s1","cwd":"/tmp/project","hook_event_name":"Stop","stop_hook_active":false}"#,
+        )
+        .unwrap();
+    assert_eq!(working.status, AgentStatus::Working);
+    assert_eq!(done.status, AgentStatus::Done);
+}
+
+#[test]
+fn kimi_ignores_unrelated_notifications() {
+    let event = r#"{"session_id":"s1","cwd":"/tmp/project","hook_event_name":"Notification","notification_type":"informational"}"#;
+    assert!(KimiAdapter.parse_event(event).is_none());
 }

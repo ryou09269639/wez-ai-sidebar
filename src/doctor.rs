@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 use anyhow::Result;
 use tokio::process::Command;
@@ -13,9 +13,16 @@ pub async fn run() -> Result<()> {
     for adapter in primary_adapters() {
         print_check(adapter.name(), adapter.detect(), None);
         let integration = integration_path(adapter.kind())?;
+        let integration_ok = if adapter.kind() == crate::state::AgentKind::Kimi {
+            fs::read_to_string(&integration)
+                .map(|text| text.contains("wez-ai-sidebar hook kimi"))
+                .unwrap_or(false)
+        } else {
+            integration.exists()
+        };
         print_check(
             &format!("{} integration", adapter.kind().display_name()),
-            integration.exists(),
+            integration_ok,
             Some(&integration),
         );
     }
@@ -39,6 +46,7 @@ fn integration_path(kind: crate::state::AgentKind) -> Result<PathBuf> {
             .join("opencode/plugins/wez-ai-sidebar.js"),
         crate::state::AgentKind::Copilot => home.join(".copilot/hooks/wez-ai-sidebar.json"),
         crate::state::AgentKind::Antigravity => home.join(".gemini/config/hooks.json"),
+        crate::state::AgentKind::Kimi => home.join(".kimi/config.toml"),
         _ => paths::config_dir()?,
     })
 }
