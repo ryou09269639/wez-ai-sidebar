@@ -1,0 +1,5 @@
+/target/
+/.gitdata/
+*.log
+*.sock
+.DS_Store

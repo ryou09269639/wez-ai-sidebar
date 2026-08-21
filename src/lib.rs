@@ -1,0 +1,10 @@
+pub mod adapters;
+pub mod config;
+pub mod daemon;
+pub mod doctor;
+pub mod installer;
+pub mod ipc;
+pub mod paths;
+pub mod state;
+pub mod tui;
+pub mod wezterm;
