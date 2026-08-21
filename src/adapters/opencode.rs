@@ -38,6 +38,7 @@ impl AgentAdapter for OpenCodeAdapter {
             "permission.replied" => state.status = AgentStatus::Working,
             "session.idle" => state.status = AgentStatus::Done,
             "session.error" => state.status = AgentStatus::Error,
+            "session.deleted" => state.status = AgentStatus::Done,
             "session.created" => state.status = AgentStatus::Idle,
             "session.status" => {
                 let status = string_at(&value, &["properties", "status", "type"])

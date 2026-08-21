@@ -14,6 +14,7 @@ use crate::state::AgentState;
 pub enum ClientRequest {
     Snapshot,
     Upsert { state: AgentState },
+    Remove { key: String },
     Rescan,
     Ping,
 }

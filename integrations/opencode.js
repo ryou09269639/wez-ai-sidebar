@@ -8,6 +8,7 @@ export const WezAiSidebar = async ({ directory }) => ({
       "session.status",
       "session.idle",
       "session.error",
+      "session.deleted",
     ]);
     if (!relevant.has(event.type)) return;
     const payload = { ...event, cwd: directory };
