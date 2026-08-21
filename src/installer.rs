@@ -11,6 +11,8 @@ use tokio::process::Command;
 use crate::{config::Config, paths};
 
 const OWNED_MARKER: &str = "wez-ai-sidebar";
+const KIMI_HOOKS_BEGIN: &str = "# wez-ai-sidebar: kimi hooks begin";
+const KIMI_HOOKS_END: &str = "# wez-ai-sidebar: kimi hooks end";
 
 pub async fn install(enable_service: bool) -> Result<()> {
     let config_file = paths::config_file()?;
@@ -26,6 +28,7 @@ pub async fn install(enable_service: bool) -> Result<()> {
     install_opencode()?;
     install_copilot()?;
     install_antigravity()?;
+    install_kimi()?;
     let service = install_service()?;
     if enable_service {
         let daemon_reload = Command::new("systemctl")
@@ -59,6 +62,7 @@ pub async fn install(enable_service: bool) -> Result<()> {
 pub async fn uninstall() -> Result<()> {
     let home = home_dir()?;
     let config_home = dirs::config_dir().context("cannot determine config directory")?;
+    cleanup_kimi_toml(&home.join(".kimi/config.toml"))?;
     for path in [
         home.join(".claude/settings.json"),
         home.join(".codex/hooks.json"),
@@ -201,6 +205,124 @@ fn install_antigravity() -> Result<()> {
         "Antigravity integration {} (permission uses pane fallback)",
         path.display()
     );
+    Ok(())
+}
+
+fn install_kimi() -> Result<()> {
+    let path = home_dir()?.join(".kimi/config.toml");
+    let current = if path.exists() {
+        fs::read_to_string(&path)?
+    } else {
+        String::new()
+    };
+    if !current.trim().is_empty() {
+        toml::from_str::<toml::Value>(&current)
+            .with_context(|| format!("refusing to modify invalid TOML at {}", path.display()))?;
+    }
+    let (base, _) = remove_kimi_hook_block(&current)?;
+    let updated = if base.trim().is_empty() {
+        format!("{}\n", kimi_hook_block())
+    } else {
+        format!("{}\n\n{}\n", base.trim_end(), kimi_hook_block())
+    };
+    toml::from_str::<toml::Value>(&updated)
+        .with_context(|| format!("generated invalid Kimi config for {}", path.display()))?;
+    if updated != current {
+        write_owned(&path, &updated)?;
+    }
+    println!("Kimi integration       {}", path.display());
+    Ok(())
+}
+
+fn kimi_hook_block() -> &'static str {
+    r#"# wez-ai-sidebar: kimi hooks begin
+[[hooks]]
+event = "SessionStart"
+command = "wez-ai-sidebar hook kimi SessionStart"
+timeout = 5
+
+[[hooks]]
+event = "UserPromptSubmit"
+command = "wez-ai-sidebar hook kimi UserPromptSubmit"
+timeout = 5
+
+[[hooks]]
+event = "PreToolUse"
+command = "wez-ai-sidebar hook kimi PreToolUse"
+timeout = 5
+
+[[hooks]]
+event = "PostToolUse"
+command = "wez-ai-sidebar hook kimi PostToolUse"
+timeout = 5
+
+[[hooks]]
+event = "PostToolUseFailure"
+command = "wez-ai-sidebar hook kimi PostToolUseFailure"
+timeout = 5
+
+[[hooks]]
+event = "Notification"
+command = "wez-ai-sidebar hook kimi Notification"
+timeout = 5
+
+[[hooks]]
+event = "Stop"
+command = "wez-ai-sidebar hook kimi Stop"
+timeout = 5
+
+[[hooks]]
+event = "StopFailure"
+command = "wez-ai-sidebar hook kimi StopFailure"
+timeout = 5
+
+[[hooks]]
+event = "SessionEnd"
+command = "wez-ai-sidebar hook kimi SessionEnd"
+timeout = 5
+# wez-ai-sidebar: kimi hooks end"#
+}
+
+fn remove_kimi_hook_block(text: &str) -> Result<(String, bool)> {
+    let Some(start) = text.find(KIMI_HOOKS_BEGIN) else {
+        return Ok((text.to_owned(), false));
+    };
+    let search_from = start + KIMI_HOOKS_BEGIN.len();
+    let end_offset = text[search_from..]
+        .find(KIMI_HOOKS_END)
+        .with_context(|| "Kimi hook block has a begin marker but no end marker")?;
+    let mut end = search_from + end_offset + KIMI_HOOKS_END.len();
+    if text[end..].starts_with("\r\n") {
+        end += 2;
+    } else if text[end..].starts_with('\n') {
+        end += 1;
+    }
+    let mut cleaned = String::with_capacity(text.len());
+    cleaned.push_str(&text[..start]);
+    cleaned.push_str(&text[end..]);
+    Ok((cleaned.trim_end().to_owned(), true))
+}
+
+fn cleanup_kimi_toml(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let current = fs::read_to_string(path)?;
+    let (cleaned, removed) = remove_kimi_hook_block(&current)?;
+    if !removed {
+        return Ok(());
+    }
+    backup(path)?;
+    if cleaned.trim().is_empty() {
+        fs::remove_file(path)?;
+        println!("removed                {}", path.display());
+    } else {
+        let updated = format!("{}\n", cleaned.trim_end());
+        toml::from_str::<toml::Value>(&updated)
+            .with_context(|| format!("refusing to write invalid TOML at {}", path.display()))?;
+        write_raw(path, &updated)?;
+        println!("cleaned                {}", path.display());
+    }
     Ok(())
 }
 
@@ -351,5 +473,23 @@ mod tests {
         let entries = value["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0]["command"], "mine");
+    }
+
+    #[test]
+    fn kimi_hook_block_round_trip_preserves_user_config() {
+        let user = "model = \"kimi-k2\"\n\n[ui]\ntheme = \"dark\"\n";
+        let installed = format!("{}\n{}\n", user.trim_end(), kimi_hook_block());
+        toml::from_str::<toml::Value>(&installed).unwrap();
+        let (cleaned, removed) = remove_kimi_hook_block(&installed).unwrap();
+        assert!(removed);
+        assert_eq!(cleaned, user.trim_end());
+    }
+
+    #[test]
+    fn kimi_hook_block_contains_passive_permission_notification() {
+        let block = kimi_hook_block();
+        assert!(block.contains("event = \"Notification\""));
+        assert!(block.contains("wez-ai-sidebar hook kimi Notification"));
+        assert!(!block.contains("permissionDecision"));
     }
 }

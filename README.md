@@ -26,6 +26,10 @@
 │ ● Antigravity      │                                       │
 │   backend          │                                       │
 │   WORKING          │                                       │
+│                    │                                       │
+│ ● Kimi             │                                       │
+│   research         │                                       │
+│   PERMISSION       │                                       │
 └────────────────────┴───────────────────────────────────────┘
 ```
 
@@ -39,6 +43,7 @@ This repository contains a functional Linux MVP:
 - Multiple concurrent instances of the same agent.
 - Structured permission detection for Claude Code, OpenCode, Codex CLI, and Copilot CLI.
 - Passive Antigravity lifecycle hooks plus a bounded terminal-tail fallback for actual permission prompts.
+- Structured Kimi Code CLI lifecycle and permission notification hooks.
 - `Enter`/`1-9` focus via `wezterm cli activate-pane`.
 - Lua per-tab sidebar creation, toggle, new-tab handling, and optional launch shortcuts.
 - Safe JSON integration merging with timestamped backups.
@@ -159,6 +164,7 @@ codex = true
 opencode = true
 copilot = true
 antigravity = true
+kimi = true
 ```
 
 Set `unicode = false` for terminals without reliable Unicode glyph support. Colors use the terminal ANSI palette rather than hard-coded RGB, so they follow the active WezTerm scheme and degrade to the terminal's basic color support.
@@ -172,6 +178,9 @@ Set `unicode = false` for terminals without reliable Unicode glyph support. Colo
 | OpenAI Codex CLI | `PermissionRequest` and lifecycle hooks | Structured | Process/title |
 | GitHub Copilot CLI | `notification: permission_prompt`, lifecycle hooks | Structured | Process/title |
 | Google Antigravity CLI | passive `PostInvocation`/`Stop` hooks | Terminal-tail fallback | Process/title |
+| Kimi Code CLI | `Notification: permission_prompt`, lifecycle hooks | Structured | Process/title |
+
+For Kimi, `wez-ai-sidebar install` appends a marked hook block to `~/.kimi/config.toml` after validating the existing TOML and writing a timestamped backup. Restart Kimi after installation and use Kimi's `/hooks` command to verify the integration. Kimi currently labels its hook API as beta, so releases should keep the parser fixtures aligned with the official schema.
 
 The Antigravity limitation is deliberate. Its documented `PreToolUse` hook runs before permission routing and requires a decision. Returning `allow` would approve the action and returning `ask` would change the user's policy. This project installs neither; it observes passive lifecycle events and scans only the last 30 lines of the known Antigravity pane without persisting the terminal text.
 
@@ -181,6 +190,7 @@ The adapter trait and state model already include `Gemini`, `Aider`, `Cursor`, a
 
 ```text
 Claude/Codex/Copilot hooks ─┐
+Kimi structured hooks ──────┤
 OpenCode plugin events ─────┼─> `wez-ai-sidebar hook` ─┐
 Antigravity passive hooks ──┘                          │
                                                       v
@@ -254,6 +264,7 @@ The integration choices were checked against current first-party documentation o
 - [OpenAI Codex hooks](https://learn.chatgpt.com/codex/hooks) and [App Server approval protocol](https://developers.openai.com/codex/app-server)
 - [GitHub Copilot hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference)
 - [Google Antigravity hooks](https://antigravity.google/docs/hooks)
+- [Kimi Code CLI hooks](https://github.com/MoonshotAI/kimi-cli/blob/main/docs/en/customization/hooks.md)
 
 See [docs/research.md](docs/research.md) for the decisions and fallback rationale.
 

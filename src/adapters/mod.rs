@@ -3,6 +3,7 @@ mod claude;
 mod codex;
 mod common;
 mod copilot;
+mod kimi;
 mod opencode;
 
 use std::process::Command;
@@ -15,6 +16,7 @@ pub use antigravity::AntigravityAdapter;
 pub use claude::ClaudeAdapter;
 pub use codex::CodexAdapter;
 pub use copilot::CopilotAdapter;
+pub use kimi::KimiAdapter;
 pub use opencode::OpenCodeAdapter;
 
 pub trait AgentAdapter: Send + Sync {
@@ -45,6 +47,7 @@ pub fn adapter(kind: AgentKind) -> Box<dyn AgentAdapter> {
         AgentKind::Codex => Box::new(CodexAdapter),
         AgentKind::Copilot => Box::new(CopilotAdapter),
         AgentKind::Antigravity => Box::new(AntigravityAdapter),
+        AgentKind::Kimi => Box::new(KimiAdapter),
         _ => Box::new(common::GenericAdapter::new(kind)),
     }
 }
@@ -56,6 +59,7 @@ pub fn primary_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(CodexAdapter),
         Box::new(CopilotAdapter),
         Box::new(AntigravityAdapter),
+        Box::new(KimiAdapter),
     ]
 }
 
