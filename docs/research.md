@@ -70,6 +70,12 @@ Decision:
 
 This is a documented best-effort integration until Google exposes a passive prompt event.
 
+## Kimi Code CLI
+
+The [official Kimi hooks documentation](https://github.com/MoonshotAI/kimi-cli/blob/main/docs/en/customization/hooks.md) currently documents 13 lifecycle events. Hook commands receive structured JSON on stdin with common `session_id`, `cwd`, and `hook_event_name` fields. The `Notification` event includes `notification_type`, `title`, `body`, and `severity`; the official permission-notification example uses `notification_type=permission_prompt`.
+
+Decision: install marked `[[hooks]]` entries in `~/.kimi/config.toml`. Use `Notification: permission_prompt` as the authoritative human-attention signal and normal lifecycle events for working/done/error. Kimi hook stdout is left empty so the observer does not add content to Kimi's context or influence approval. The installer parses the existing TOML, preserves unrelated text and comments, writes a timestamped backup, and removes only its marked block during uninstall.
+
 ## Existing projects
 
 Projects reviewed for UX/architecture comparison:
@@ -90,4 +96,3 @@ No source code was copied. The MVP adopts the general semantic-event principle w
 - Terminal fallback text is bounded and never persisted.
 - Installer merges JSON and writes a backup before modifying an existing file.
 - The OpenCode plugin launches argv directly, without a shell.
-
