@@ -14,6 +14,41 @@ local function merge(defaults, supplied)
   return result
 end
 
+local function normalized_mods(mods)
+  local values = {}
+  for value in string.gmatch(string.upper(mods or ''), '[^|]+') do
+    if value ~= '' and value ~= 'NONE' then table.insert(values, value) end
+  end
+  table.sort(values)
+  return table.concat(values, '|')
+end
+
+local function matches_key(binding, key, mods)
+  return type(binding) == 'table'
+    and string.lower(binding.key or '') == string.lower(key)
+    and normalized_mods(binding.mods) == normalized_mods(mods)
+end
+
+local function has_key_assignment(config, key, mods)
+  for _, binding in ipairs(config.keys or {}) do
+    if matches_key(binding, key, mods) then return true end
+  end
+
+  local defaults_disabled = false
+  pcall(function() defaults_disabled = config.disable_default_key_bindings == true end)
+  if defaults_disabled or not wezterm.gui or type(wezterm.gui.default_keys) ~= 'function' then
+    return false
+  end
+
+  local ok, defaults = pcall(wezterm.gui.default_keys)
+  if ok then
+    for _, binding in ipairs(defaults or {}) do
+      if matches_key(binding, key, mods) then return true end
+    end
+  end
+  return false
+end
+
 local function is_sidebar(pane)
   local title = string.lower(pane:get_title() or '')
   local process = string.lower(pane:get_foreground_process_name() or '')
@@ -101,6 +136,7 @@ function M.setup(config, supplied)
     binary = 'wez-ai-sidebar',
     toggle_key = 'A',
     toggle_mods = 'CTRL|SHIFT',
+    ctrl_s_toggle = true,
     launch_shortcuts = false,
   }, supplied)
 
@@ -110,6 +146,14 @@ function M.setup(config, supplied)
     mods = options.toggle_mods,
     action = wezterm.action_callback(toggle),
   })
+  -- Never replace a user-defined or WezTerm default Ctrl+S assignment.
+  if options.ctrl_s_toggle and not has_key_assignment(config, 's', 'CTRL') then
+    table.insert(config.keys, {
+      key = 's',
+      mods = 'CTRL',
+      action = wezterm.action_callback(toggle),
+    })
+  end
   table.insert(config.keys, {
     key = 'T',
     mods = 'CTRL|SHIFT',
