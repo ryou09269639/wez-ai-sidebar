@@ -3,7 +3,7 @@ use serde_json::Value;
 use crate::state::{AgentKind, AgentState, AgentStatus, DetectionSource, PermissionType};
 
 use super::{
-    common::{base_state, event_name, message_from, permission_from_tool, string_at},
+    common::{base_state, event_name, message_from, permission_from_tool, session_id, string_at},
     AgentAdapter,
 };
 
@@ -24,6 +24,13 @@ impl AgentAdapter for OpenCodeAdapter {
 
     fn parse_event(&self, event: &str) -> Option<AgentState> {
         let value: Value = serde_json::from_str(event).ok()?;
+        // Some events (e.g. a skill frontmatter parse failure) are published
+        // without a sessionID because they aren't tied to any session. Without
+        // a real ID, base_state falls back to a key that includes this hook
+        // invocation's own PID, which no future event will ever reuse — so the
+        // resulting placeholder can never be updated or cleared and would sit
+        // in the sidebar as a permanently stuck status.
+        session_id(&value)?;
         let mut state = base_state(self.kind(), &value);
         state.source = DetectionSource::StructuredEvent;
         let name = event_name(&value);
@@ -38,6 +45,7 @@ impl AgentAdapter for OpenCodeAdapter {
             "permission.replied" => state.status = AgentStatus::Working,
             "session.idle" => state.status = AgentStatus::Done,
             "session.error" => state.status = AgentStatus::Error,
+            "session.deleted" => state.status = AgentStatus::Done,
             "session.created" => state.status = AgentStatus::Idle,
             "session.status" => {
                 let status = string_at(&value, &["properties", "status", "type"])

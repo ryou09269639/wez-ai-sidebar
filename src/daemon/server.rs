@@ -12,6 +12,7 @@ use tokio::{
 };
 use tracing::{debug, warn};
 
+use super::process::{self, ProcessSnapshot};
 use crate::{
     adapters::parse_terminal_output,
     config::Config,
@@ -100,6 +101,10 @@ async fn handle_connection(stream: UnixStream, store: SharedStore, config: Confi
             }
             ServerResponse::Ok
         }
+        ClientRequest::Remove { key } => {
+            store.lock().await.remove(&key)?;
+            ServerResponse::Ok
+        }
         ClientRequest::Rescan => {
             rescan(&store, &config).await?;
             ServerResponse::Ok
@@ -115,8 +120,20 @@ async fn handle_connection(stream: UnixStream, store: SharedStore, config: Confi
 async fn rescan(store: &SharedStore, config: &Config) -> Result<()> {
     ingest_inbox(store, config).await?;
     let client = WeztermClient::default();
-    let panes = client.list_panes().await.unwrap_or_default();
-    discover_process_placeholders(store, &panes, config).await?;
+    let panes = match client.list_panes().await {
+        Ok(panes) => panes,
+        Err(error) => {
+            debug!(%error, "WezTerm pane discovery failed; preserving current states");
+            store
+                .lock()
+                .await
+                .prune(Duration::from_secs(config.stale_after_secs.max(60)))?;
+            return Ok(());
+        }
+    };
+    let processes = process::detect(&panes).await;
+    reconcile_closed_agents(store, &panes, &processes).await?;
+    discover_process_placeholders(store, &panes, &processes, config).await?;
     enrich_locations(store, &panes).await?;
     scrape_fallbacks(store, &client).await?;
     store
@@ -152,6 +169,7 @@ async fn ingest_inbox(store: &SharedStore, config: &Config) -> Result<()> {
 async fn discover_process_placeholders(
     store: &SharedStore,
     panes: &[WeztermPane],
+    processes: &ProcessSnapshot,
     config: &Config,
 ) -> Result<()> {
     let existing = store.lock().await.snapshot();
@@ -163,7 +181,15 @@ async fn discover_process_placeholders(
         {
             continue;
         }
-        let Some(kind) = kind_from_title(&pane.title) else {
+        let detected = processes.by_pane.get(&pane.pane_id).copied();
+        let kind = detected.map(|item| item.kind).or_else(|| {
+            if processes.available && pane.tty_name.is_some() {
+                None
+            } else {
+                kind_from_title(&pane.title)
+            }
+        });
+        let Some(kind) = kind else {
             continue;
         };
         if !config.agents.enabled(kind) {
@@ -174,10 +200,65 @@ async fn discover_process_placeholders(
         state.wezterm.pane_id = Some(pane.pane_id);
         state.wezterm.tab_id = Some(pane.tab_id);
         state.wezterm.window_id = Some(pane.window_id);
+        state.pid = detected.map(|item| item.pid);
         state.source = DetectionSource::Process;
+        // `AgentState::new` defaults to `Unknown`, which `scrape_fallbacks` only
+        // ever leaves once it starts matching a keyword pattern; ordinary "still
+        // working" terminal text never matches one. Idle at least reflects that
+        // a real process was found, instead of showing UNKNOWN forever.
+        state.status = AgentStatus::Idle;
         store.lock().await.upsert(state)?;
     }
     Ok(())
+}
+
+async fn reconcile_closed_agents(
+    store: &SharedStore,
+    panes: &[WeztermPane],
+    processes: &ProcessSnapshot,
+) -> Result<()> {
+    let pane_map = panes
+        .iter()
+        .map(|pane| (pane.pane_id, pane))
+        .collect::<HashMap<_, _>>();
+    let snapshot = store.lock().await.snapshot();
+    let mut remove = Vec::new();
+    for state in snapshot {
+        let Some(pane_id) = state.wezterm.pane_id else {
+            continue;
+        };
+        let Some(pane) = pane_map.get(&pane_id) else {
+            remove.push(state.key());
+            continue;
+        };
+        if !is_pane_placeholder(&state) {
+            continue;
+        }
+        let detected_now = processes
+            .by_pane
+            .get(&pane_id)
+            .is_some_and(|detected| detected.kind == state.agent);
+        let recorded_pid_alive = state
+            .pid
+            .is_some_and(|pid| process::pid_matches_agent(pid, state.agent));
+        let title_fallback_alive = (!processes.available || pane.tty_name.is_none())
+            && kind_from_title(&pane.title) == Some(state.agent);
+        if !detected_now && !recorded_pid_alive && !title_fallback_alive {
+            remove.push(state.key());
+        }
+    }
+    let mut store = store.lock().await;
+    for key in remove {
+        store.remove(&key)?;
+    }
+    Ok(())
+}
+
+fn is_pane_placeholder(state: &AgentState) -> bool {
+    state
+        .wezterm
+        .pane_id
+        .is_some_and(|pane_id| state.id == format!("pane-{pane_id}"))
 }
 
 async fn enrich_locations(store: &SharedStore, panes: &[WeztermPane]) -> Result<()> {
@@ -312,11 +393,62 @@ fn set_socket_permissions(_path: &Path) -> Result<()> {
 mod tests {
     use super::*;
 
+    fn pane(pane_id: u64, title: &str) -> WeztermPane {
+        WeztermPane {
+            window_id: 1,
+            tab_id: 2,
+            pane_id,
+            workspace: "default".to_owned(),
+            size: None,
+            title: title.to_owned(),
+            cwd: "file://localhost/tmp/project".to_owned(),
+            tty_name: Some(format!("/dev/pts/{pane_id}")),
+        }
+    }
+
     #[test]
     fn process_detection_does_not_confuse_sidebar() {
         assert_eq!(kind_from_title("wez-ai-sidebar"), None);
         assert_eq!(kind_from_title("Claude Code"), Some(AgentKind::Claude));
         assert_eq!(kind_from_title("agy"), Some(AgentKind::Antigravity));
         assert_eq!(kind_from_title("Kimi Code CLI"), Some(AgentKind::Kimi));
+    }
+
+    #[tokio::test]
+    async fn tty_process_detects_codex_with_a_shell_title() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Arc::new(Mutex::new(StateStore::load(directory.path()).unwrap()));
+        let panes = vec![pane(12, "zsh")];
+        let processes = ProcessSnapshot {
+            available: true,
+            by_pane: HashMap::from([(
+                12,
+                process::DetectedAgent {
+                    kind: AgentKind::Codex,
+                    pid: 4242,
+                },
+            )]),
+        };
+        discover_process_placeholders(&store, &panes, &processes, &Config::default())
+            .await
+            .unwrap();
+        let snapshot = store.lock().await.snapshot();
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].agent, AgentKind::Codex);
+        assert_eq!(snapshot[0].pid, Some(4242));
+        assert_eq!(snapshot[0].status, AgentStatus::Idle);
+    }
+
+    #[tokio::test]
+    async fn removes_an_agent_as_soon_as_its_pane_closes() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Arc::new(Mutex::new(StateStore::load(directory.path()).unwrap()));
+        let mut state = AgentState::new("session", AgentKind::Codex, "/tmp/project");
+        state.wezterm.pane_id = Some(12);
+        store.lock().await.upsert(state).unwrap();
+        reconcile_closed_agents(&store, &[], &ProcessSnapshot::default())
+            .await
+            .unwrap();
+        assert!(store.lock().await.snapshot().is_empty());
     }
 }

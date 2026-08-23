@@ -18,6 +18,8 @@ pub struct WeztermPane {
     pub title: String,
     #[serde(default)]
     pub cwd: String,
+    #[serde(default)]
+    pub tty_name: Option<String>,
 }
 
 impl WeztermPane {
