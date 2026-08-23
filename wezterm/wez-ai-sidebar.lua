@@ -135,7 +135,7 @@ end
 
 function M.setup(config, supplied)
   options = merge({
-    width = 26,
+    width = 20,
     position = 'left',
     auto_create = true,
     binary = 'wez-ai-sidebar',
