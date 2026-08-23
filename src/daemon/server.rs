@@ -345,6 +345,10 @@ async fn upsert_with_notification(
             .unwrap_or_else(|| state.status.label().to_owned());
         tokio::spawn(async move {
             let _ = Command::new("notify-send")
+                .arg("-u")
+                .arg("normal")
+                .arg("-t")
+                .arg("8000")
                 .arg(title)
                 .arg(body)
                 .status()
