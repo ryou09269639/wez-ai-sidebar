@@ -83,7 +83,7 @@ package.path = package.path .. ';/home/YOU/.config/wezterm/?.lua'
 local wez_ai = require('wez-ai-sidebar')
 
 wez_ai.setup(config, {
-  width = 26,
+  width = 20,
   position = 'left',
   auto_create = true,
   ctrl_s_toggle = true,
@@ -149,7 +149,7 @@ refresh_interval_ms = 300
 stale_after_secs = 86400
 
 [sidebar]
-width = 26
+width = 20
 show_cwd = true
 show_message = true
 unicode = true

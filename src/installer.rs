@@ -104,7 +104,7 @@ fn install_lua() -> Result<()> {
     write_owned(&module, include_str!("../wezterm/wez-ai-sidebar.lua"))?;
     let snippet = paths::config_dir()?.join("wezterm.lua.snippet");
     let text = format!(
-        "package.path = package.path .. ';{}/?.lua'\nlocal wez_ai = require('wez-ai-sidebar')\nwez_ai.setup(config, {{ width = 26, position = 'left', auto_create = true }})\n",
+        "package.path = package.path .. ';{}/?.lua'\nlocal wez_ai = require('wez-ai-sidebar')\nwez_ai.setup(config, {{ width = 20, position = 'left', auto_create = true }})\n",
         wezterm_dir.display()
     );
     write_owned(&snippet, &text)?;
