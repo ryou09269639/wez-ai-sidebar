@@ -161,6 +161,28 @@ pub fn message_from(value: &Value) -> Option<String> {
     .and_then(AgentState::short_message)
 }
 
+/// Summarizes a `PreToolUse`/`PostToolUse` hook payload as `"<tool>: <detail>"`
+/// (or just the tool name when no field matches), so the sidebar can show what
+/// an agent is actually doing instead of only a generic "WORKING" label.
+pub fn tool_summary(value: &Value) -> Option<String> {
+    let tool_name = string_at(value, &["tool_name"])?;
+    let detail = [
+        &["tool_input", "command"][..],
+        &["tool_input", "file_path"][..],
+        &["tool_input", "pattern"][..],
+        &["tool_input", "url"][..],
+        &["tool_input", "description"][..],
+        &["tool_input", "prompt"][..],
+    ]
+    .iter()
+    .find_map(|path| string_at(value, path));
+    let text = match detail {
+        Some(detail) => format!("{tool_name}: {detail}"),
+        None => tool_name,
+    };
+    AgentState::short_message(text)
+}
+
 pub fn parse_terminal_output(text: &str) -> Option<ParsedStatus> {
     let tail = text.lines().rev().take(40).collect::<Vec<_>>().join("\n");
     let patterns = [
