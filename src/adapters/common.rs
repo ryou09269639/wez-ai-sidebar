@@ -149,6 +149,10 @@ pub fn message_from(value: &Value) -> Option<String> {
         &["reason"][..],
         &["tool_input", "description"][..],
         &["properties", "message"][..],
+        // OpenCode wraps every session.error cause in `{name, data}` (see
+        // NamedError.toObject in its source), so the message lives one level
+        // deeper than a plain `error.message` shape.
+        &["properties", "error", "data", "message"][..],
         &["properties", "error", "message"][..],
         &["error"][..],
     ]

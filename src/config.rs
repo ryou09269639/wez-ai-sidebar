@@ -58,7 +58,7 @@ impl Default for Config {
 impl Default for SidebarConfig {
     fn default() -> Self {
         Self {
-            width: 26,
+            width: 20,
             show_cwd: true,
             show_message: true,
             unicode: true,

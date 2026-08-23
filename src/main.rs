@@ -162,10 +162,22 @@ async fn receive_hook(kind: AgentKind, event_name: Option<String>) -> Result<()>
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input)?;
     let input = attach_event_name(&input, event_name.as_deref());
+    let session_ended = event_name
+        .as_deref()
+        .map(is_session_end)
+        .unwrap_or_else(|| {
+            event_name_from_input(&input)
+                .as_deref()
+                .is_some_and(is_session_end)
+        });
     if let Some(state) = adapters::adapter(kind).parse_event(&input) {
-        if publish_state(state).await.is_err() {
-            // Hooks must never break or approve/deny an agent operation. A failed
-            // daemon delivery is spooled for later ingestion.
+        let result = if session_ended {
+            remove_state(state.key()).await
+        } else {
+            publish_state(state).await
+        };
+        if result.is_err() {
+            // Hooks must never break or approve/deny an agent operation.
         }
     }
     if kind == AgentKind::Antigravity && event_name.as_deref() == Some("Stop") {
@@ -174,6 +186,21 @@ async fn receive_hook(kind: AgentKind, event_name: Option<String>) -> Result<()>
         println!("{{}}");
     }
     Ok(())
+}
+
+fn is_session_end(event: &str) -> bool {
+    event.eq_ignore_ascii_case("SessionEnd") || event.eq_ignore_ascii_case("session.deleted")
+}
+
+fn event_name_from_input(input: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(input).ok()?;
+    value
+        .get("_wez_event")
+        .or_else(|| value.get("hook_event_name"))
+        .or_else(|| value.pointer("/event/type"))
+        .or_else(|| value.get("type"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
 }
 
 fn attach_event_name(input: &str, event_name: Option<&str>) -> String {
@@ -232,6 +259,20 @@ async fn publish_state(state: AgentState) -> Result<()> {
         .with_context(|| format!("failed to spool {}", path.display()))
 }
 
+async fn remove_state(key: String) -> Result<()> {
+    let socket = paths::socket_path()?;
+    if let Ok(response) =
+        ipc::request(&socket, &ipc::ClientRequest::Remove { key: key.clone() }).await
+    {
+        if matches!(response, ipc::ServerResponse::Ok) {
+            return Ok(());
+        }
+    }
+    let mut store = wez_ai_sidebar::state::StateStore::load(paths::state_dir()?)?;
+    store.remove(&key)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,5 +281,21 @@ mod tests {
     fn injects_hook_name_without_persisting_raw_text() {
         let value: Value = serde_json::from_str(&attach_event_name("{}", Some("Stop"))).unwrap();
         assert_eq!(value["_wez_event"], "Stop");
+    }
+
+    #[test]
+    fn recognizes_session_end_events() {
+        assert!(is_session_end("SessionEnd"));
+        assert!(is_session_end("sessionend"));
+        assert!(is_session_end("session.deleted"));
+        assert!(!is_session_end("Stop"));
+    }
+
+    #[test]
+    fn reads_opencode_session_deleted_from_payload() {
+        assert_eq!(
+            event_name_from_input(r#"{"type":"session.deleted"}"#).as_deref(),
+            Some("session.deleted")
+        );
     }
 }

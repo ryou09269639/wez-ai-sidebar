@@ -8,14 +8,16 @@ export const WezAiSidebar = async ({ directory }) => ({
       "session.status",
       "session.idle",
       "session.error",
+      "session.deleted",
     ]);
     if (!relevant.has(event.type)) return;
     const payload = { ...event, cwd: directory };
     // Spawn with an argv array (no shell) so event data cannot become a command.
+    // OpenCode's bundled Bun runtime rejects top-level stdout/stderr options
+    // (throws "stdio must be an array..."); the stdio tuple form is required.
     Bun.spawnSync(["wez-ai-sidebar", "hook", "opencode"], {
       stdin: JSON.stringify(payload),
-      stdout: "ignore",
-      stderr: "ignore",
+      stdio: ["pipe", "ignore", "ignore"],
     });
   },
 });
