@@ -3,7 +3,7 @@ use serde_json::Value;
 use crate::state::{AgentKind, AgentState, AgentStatus, DetectionSource};
 
 use super::{
-    common::{base_state, event_name, message_from, permission_from_tool, string_at},
+    common::{base_state, event_name, message_from, permission_from_tool, string_at, tool_summary},
     AgentAdapter,
 };
 
@@ -43,8 +43,12 @@ impl AgentAdapter for ClaudeAdapter {
                     state.status = AgentStatus::Idle;
                 }
             }
-            "UserPromptSubmit" | "PreToolUse" | "PostToolUse" => {
+            "UserPromptSubmit" => {
                 state.status = AgentStatus::Working;
+            }
+            "PreToolUse" | "PostToolUse" => {
+                state.status = AgentStatus::Working;
+                state.message = tool_summary(&value);
             }
             "PostToolUseFailure" | "StopFailure" => state.status = AgentStatus::Error,
             "Stop" => state.status = AgentStatus::Done,

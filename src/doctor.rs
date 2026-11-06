@@ -7,7 +7,11 @@ use crate::{adapters::primary_adapters, ipc, paths};
 
 pub async fn run() -> Result<()> {
     let wezterm = command_ok("wezterm", &["--version"]).await;
-    let wezterm_cli = command_ok("wezterm", &["cli", "list", "--format", "json"]).await;
+    let wezterm_cli = command_ok(
+        "wezterm",
+        &["cli", "--no-auto-start", "list", "--format", "json"],
+    )
+    .await;
     print_check("WezTerm", wezterm, None);
     print_check("WezTerm CLI", wezterm_cli, None);
     for adapter in primary_adapters() {

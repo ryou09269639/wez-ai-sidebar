@@ -14,6 +14,22 @@ fn claude_permission_request_is_structured() {
 }
 
 #[test]
+fn claude_pre_tool_use_shows_what_the_tool_is_doing() {
+    let event = r#"{"session_id":"abc","cwd":"/tmp/project","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cargo test","description":"Run the test suite"}}"#;
+    let state = ClaudeAdapter.parse_event(event).unwrap();
+    assert_eq!(state.status, AgentStatus::Working);
+    assert_eq!(state.message.as_deref(), Some("Bash: cargo test"));
+}
+
+#[test]
+fn claude_post_tool_use_falls_back_to_the_tool_name_with_no_recognized_input_field() {
+    let event = r#"{"session_id":"abc","cwd":"/tmp/project","hook_event_name":"PostToolUse","tool_name":"TodoWrite","tool_input":{"todos":[]}}"#;
+    let state = ClaudeAdapter.parse_event(event).unwrap();
+    assert_eq!(state.status, AgentStatus::Working);
+    assert_eq!(state.message.as_deref(), Some("TodoWrite"));
+}
+
+#[test]
 fn codex_apply_patch_permission_is_file_edit() {
     let event = r#"{"session_id":"abc","cwd":"/tmp/project","hook_event_name":"PermissionRequest","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch"}}"#;
     let state = CodexAdapter.parse_event(event).unwrap();

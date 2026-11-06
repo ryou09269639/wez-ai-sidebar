@@ -1,9 +1,19 @@
-use std::{env, fs, path::PathBuf, process::Stdio, time::SystemTime};
+use std::{
+    env, fs,
+    path::PathBuf,
+    process::{Output, Stdio},
+    time::{Duration, SystemTime},
+};
 
 use anyhow::{Context, Result};
 use tokio::process::Command;
 
 use super::WeztermPane;
+
+/// Upper bound for one `wezterm cli` invocation. A wedged mux connection can
+/// leave the CLI waiting forever; since the daemon awaits each call in its
+/// refresh loop, a single hang would otherwise freeze the sidebar for good.
+const CLI_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct WeztermClient {
@@ -41,14 +51,30 @@ impl WeztermClient {
         command
     }
 
+    /// Runs `wezterm <args>` and collects its output, giving up after
+    /// `timeout`. `kill_on_drop` makes sure a timed-out child is killed
+    /// rather than left behind holding a mux connection.
+    async fn run(&self, args: &[&str], timeout: Duration) -> Result<Output> {
+        let name = format!("wezterm {}", args[..args.len().min(2)].join(" "));
+        let child = self
+            .command()
+            .args(with_no_auto_start(args))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .with_context(|| format!("failed to execute `{name}`"))?;
+        match tokio::time::timeout(timeout, child.wait_with_output()).await {
+            Ok(output) => output.with_context(|| format!("failed to read output of `{name}`")),
+            Err(_) => anyhow::bail!("`{name}` timed out after {}s", timeout.as_secs()),
+        }
+    }
+
     pub async fn list_panes(&self) -> Result<Vec<WeztermPane>> {
         let output = self
-            .command()
-            .args(["cli", "list", "--format", "json"])
-            .stdin(Stdio::null())
-            .output()
-            .await
-            .context("failed to execute `wezterm cli list`")?;
+            .run(&["cli", "list", "--format", "json"], CLI_TIMEOUT)
+            .await?;
         if !output.status.success() {
             anyhow::bail!(
                 "wezterm cli list failed: {}",
@@ -60,20 +86,20 @@ impl WeztermClient {
 
     pub async fn get_text(&self, pane_id: u64, lines: u16) -> Result<String> {
         let start_line = format!("-{}", lines.max(1));
+        let pane_id = pane_id.to_string();
         let output = self
-            .command()
-            .args([
-                "cli",
-                "get-text",
-                "--pane-id",
-                &pane_id.to_string(),
-                "--start-line",
-                &start_line,
-            ])
-            .stdin(Stdio::null())
-            .output()
-            .await
-            .context("failed to execute `wezterm cli get-text`")?;
+            .run(
+                &[
+                    "cli",
+                    "get-text",
+                    "--pane-id",
+                    &pane_id,
+                    "--start-line",
+                    &start_line,
+                ],
+                CLI_TIMEOUT,
+            )
+            .await?;
         if !output.status.success() {
             anyhow::bail!(
                 "wezterm cli get-text failed: {}",
@@ -84,18 +110,27 @@ impl WeztermClient {
     }
 
     pub async fn activate_pane(&self, pane_id: u64) -> Result<()> {
-        let status = self
-            .command()
-            .args(["cli", "activate-pane", "--pane-id", &pane_id.to_string()])
-            .stdin(Stdio::null())
-            .status()
-            .await
-            .context("failed to execute `wezterm cli activate-pane`")?;
-        if !status.success() {
+        let id = pane_id.to_string();
+        let output = self
+            .run(&["cli", "activate-pane", "--pane-id", &id], CLI_TIMEOUT)
+            .await?;
+        if !output.status.success() {
             anyhow::bail!("wezterm could not activate pane {pane_id}");
         }
         Ok(())
     }
+}
+
+/// Adds `--no-auto-start` to a `wezterm cli` invocation. While no GUI is
+/// running (e.g. between closing and reopening WezTerm), plain `wezterm cli`
+/// spawns a background `wezterm-mux-server` that then lingers forever; the
+/// daemon polls constantly, so it would do that on every restart.
+fn with_no_auto_start<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let mut result = args.to_vec();
+    if result.first() == Some(&"cli") && !result.contains(&"--no-auto-start") {
+        result.insert(1, "--no-auto-start");
+    }
+    result
 }
 
 /// Locates the unix socket of the currently running WezTerm GUI instance, so
@@ -175,6 +210,19 @@ mod tests {
     use std::fs::File;
 
     #[test]
+    fn cli_calls_never_auto_start_a_mux_server() {
+        assert_eq!(
+            with_no_auto_start(&["cli", "list", "--format", "json"]),
+            vec!["cli", "--no-auto-start", "list", "--format", "json"]
+        );
+        assert_eq!(
+            with_no_auto_start(&["cli", "--no-auto-start", "list"]),
+            vec!["cli", "--no-auto-start", "list"]
+        );
+        assert_eq!(with_no_auto_start(&["--version"]), vec!["--version"]);
+    }
+
+    #[test]
     fn parses_official_list_schema() {
         let panes: Vec<WeztermPane> = serde_json::from_str(
             r#"[{"window_id":0,"tab_id":4,"pane_id":12,"workspace":"default","size":{"rows":24,"cols":80},"title":"claude","cwd":"file://host/home/user/project","tty_name":"/dev/pts/7"}]"#,
@@ -216,6 +264,25 @@ mod tests {
             newest.unwrap().1,
             directory.path().join(format!("gui-sock-{live_pid}"))
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_hung_cli_call_times_out_instead_of_blocking_forever() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let script = directory.path().join("fake-wezterm");
+        fs::write(&script, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let client = WeztermClient::with_executable(script.to_str().unwrap());
+
+        let started = std::time::Instant::now();
+        let error = client
+            .run(&["cli", "get-text"], Duration::from_millis(200))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]
