@@ -58,7 +58,7 @@ impl WeztermClient {
         let name = format!("wezterm {}", args[..args.len().min(2)].join(" "));
         let child = self
             .command()
-            .args(args)
+            .args(with_no_auto_start(args))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -119,6 +119,18 @@ impl WeztermClient {
         }
         Ok(())
     }
+}
+
+/// Adds `--no-auto-start` to a `wezterm cli` invocation. While no GUI is
+/// running (e.g. between closing and reopening WezTerm), plain `wezterm cli`
+/// spawns a background `wezterm-mux-server` that then lingers forever; the
+/// daemon polls constantly, so it would do that on every restart.
+fn with_no_auto_start<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let mut result = args.to_vec();
+    if result.first() == Some(&"cli") && !result.contains(&"--no-auto-start") {
+        result.insert(1, "--no-auto-start");
+    }
+    result
 }
 
 /// Locates the unix socket of the currently running WezTerm GUI instance, so
@@ -196,6 +208,19 @@ fn process_is_alive(_pid: u32) -> bool {
 mod tests {
     use super::*;
     use std::fs::File;
+
+    #[test]
+    fn cli_calls_never_auto_start_a_mux_server() {
+        assert_eq!(
+            with_no_auto_start(&["cli", "list", "--format", "json"]),
+            vec!["cli", "--no-auto-start", "list", "--format", "json"]
+        );
+        assert_eq!(
+            with_no_auto_start(&["cli", "--no-auto-start", "list"]),
+            vec!["cli", "--no-auto-start", "list"]
+        );
+        assert_eq!(with_no_auto_start(&["--version"]), vec!["--version"]);
+    }
 
     #[test]
     fn parses_official_list_schema() {
